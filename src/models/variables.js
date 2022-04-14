@@ -83,6 +83,7 @@ var FlatpakVariablesModel = GObject.registerClass({
     updateFromProxyProperty(property, value) {
         const overrides = {};
         const variables = {};
+        const originals = {...this._originals, ...this._globals};
         const values = value.split(';');
 
         values
@@ -95,31 +96,36 @@ var FlatpakVariablesModel = GObject.registerClass({
 
         /* Add new variables */
         Object.entries(variables).forEach(([_key, _value]) => {
-            if (!(_key in this._originals && this._originals[_key] === _value))
-                overrides[_key] = _value;
+            const fromOriginals = _key in originals && originals[_key] === _value;
+
+            if (fromOriginals)
+                return;
+
+            overrides[_key] = _value;
         });
 
-        /* Remove original variables */
-        Object.entries(this._originals).forEach(([_key]) => {
-            if (!(_key in variables))
-                overrides[_key] = '';
+        /* Remove original and global variables */
+        Object.entries(originals).forEach(([_key]) => {
+            const seenInVariables = _key in variables;
+
+            if (seenInVariables)
+                return;
+
+            overrides[_key] = '';
         });
 
         this._overrides = overrides;
     }
 
     updateProxyProperty(proxy) {
-        const originals = Object.entries(this._originals)
-            .filter(([key]) => !(key in this._overrides))
-            .map(([key, value]) => `${key}=${value}`);
+        let variables = {...this._originals, ...this._globals, ...this._overrides};
 
-        const overrides = Object.entries(this._overrides)
+        variables = Object.entries(variables)
             .filter(([, value]) => value.length !== 0)
-            .map(([key, value]) => `${key}=${value}`);
+            .map(([key, value]) => `${key}=${value}`)
+            .join(';');
 
-        const values = [...originals, ...overrides];
-
-        proxy.set_property('variables', values.join(';'));
+        proxy.set_property('variables', variables);
     }
 
     loadFromKeyFile(group, key, value, overrides, global) {
